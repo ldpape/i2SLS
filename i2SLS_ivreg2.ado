@@ -147,6 +147,7 @@ mata: beta_initial = beta_new
 	mat rownames Sigma_tild = `names' 
     mat colnames Sigma_tild = `names' 
     ereturn post beta_final Sigma_tild , obs(`=e(N)') depname(`depvar') esample(`touse')  dof(`=e(df r)') 
+    ereturn display
 	restore 
 ereturn scalar delta = `delta'
 ereturn  scalar eps =   `eps'
