@@ -155,6 +155,5 @@ ereturn scalar widstat = e(widstat)
 ereturn scalar arf = e(arf)
 ereturn local cmd "i2SLS_ivreg2"
 ereturn local vcetype `option'
-ereturn display
 end
 
