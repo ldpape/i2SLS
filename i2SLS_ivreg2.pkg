@@ -4,4 +4,5 @@ d i2SLS_ivreg2
 d Program to run small sample iOLS with instrumental variables (i2SLS)
 d Distribution-Date: 29 March 2021
 f i2SLS_ivreg2.ado
+f i2SLS_ivreg2_test.ado
 f i2SLS_ivreg2.sthlp
