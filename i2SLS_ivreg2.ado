@@ -139,7 +139,7 @@ mata: beta_initial = beta_new
 	mata : invXpPzIWX = invsym(0.5*cross(X,Z)*invsym(cross(Z,Z))*cross(Z,ui,X)+ 0.5*cross(X,ui,Z)*invsym(cross(Z,Z))*cross(Z,X))
 *	mata : invXpPzIWX = invsym(0.5*X'*(Z*invsym(cross(Z,Z))*(Z':*ui')+ (ui:*Z)*invsym(cross(Z,Z))*Z')*X)
 	*mata : invXpPzIWX = invsym(0.5*X'*(Pz*IW+IW*Pz)*X)
-	mata : Sigma_tild = invXpPzIWX*Sigma_0*invXpPzIWX
+	mata : Sigma_tild = invXpPzIWX*Sigma_0*invXpPzIWX:/rows(X)^(2)
     mata: st_matrix("Sigma_tild", Sigma_tild) // used in practice
 	*** Stocker les resultats dans une matrice
 	local names : colnames e(b)
