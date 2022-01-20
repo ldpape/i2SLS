@@ -135,10 +135,8 @@ mata: beta_initial = beta_new
 	matrix beta_final = e(b) // 	mata: st_matrix("beta_final", beta_new)
 	matrix Sigma = e(V)
 	mata : Sigma_hat = st_matrix("Sigma")
-	mata : Sigma_0 = (cross(X,Z)*invsym(cross(Z,Z))*cross(Z,X))*Sigma_hat*(cross(X,Z)*invsym(cross(Z,Z))*cross(Z,X)) // recover original HAC 
-	mata : invXpPzIWX = invsym(0.5*cross(X,Z)*invsym(cross(Z,Z))*cross(Z,ui,X)+ 0.5*cross(X,ui,Z)*invsym(cross(Z,Z))*cross(Z,X))
-*	mata : invXpPzIWX = invsym(0.5*X'*(Z*invsym(cross(Z,Z))*(Z':*ui')+ (ui:*Z)*invsym(cross(Z,Z))*Z')*X)
-	*mata : invXpPzIWX = invsym(0.5*X'*(Pz*IW+IW*Pz)*X)
+	mata : Sigma_0 = (cross(X,Z)*invsym(cross(Z,Z))*cross(Z,X):/rows(X))*Sigma_hat*(cross(X,Z)*invsym(cross(Z,Z))*cross(Z,X):/rows(X)) // recover original HAC 
+	mata : invXpPzIWX = invsym(0.5:/rows(X)*cross(X,Z)*invsym(cross(Z,Z))*cross(Z,ui,X)+ 0.5:/rows(X)*cross(X,ui,Z)*invsym(cross(Z,Z))*cross(Z,X))
 	mata : Sigma_tild = invXpPzIWX*Sigma_0*invXpPzIWX
     mata: st_matrix("Sigma_tild", Sigma_tild) // used in practice
 	*** Stocker les resultats dans une matrice
