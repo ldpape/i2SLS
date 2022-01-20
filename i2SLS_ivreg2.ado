@@ -138,7 +138,7 @@ mata: beta_initial = beta_new
 	mata : Sigma_0 = (cross(X,Z)*invsym(cross(Z,Z))*cross(Z,X):/rows(X))*Sigma_hat*(cross(X,Z)*invsym(cross(Z,Z))*cross(Z,X):/rows(X)) // recover original HAC 
 	mata : invXpPzIWX = invsym(0.5:/rows(X)*cross(X,Z)*invsym(cross(Z,Z))*cross(Z,ui,X)+ 0.5:/rows(X)*cross(X,ui,Z)*invsym(cross(Z,Z))*cross(Z,X))
 	mata : Sigma_tild = invXpPzIWX*Sigma_0*invXpPzIWX
-    mata: st_matrix("Sigma_tild", Sigma_tild) // used in practice
+    	mata: st_matrix("Sigma_tild", Sigma_tild) // used in practice
 	*** Stocker les resultats dans une matrice
 	local names : colnames e(b)
 	local nbvar : word count `names'
