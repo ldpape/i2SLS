@@ -3,12 +3,19 @@
 * 19/12 : add correction when no covariate is included.
 * 21/12 : Manual iteration of 2SLS GMM + options to control nb iterations /convergence..
 * 04/01 : retour de la constante + check de convergence 
+* 21/01 : symmetric S.E. + correction de syntax + check singleton de PPML
+
 cap program drop i2SLS_ivreg2
 program define i2SLS_ivreg2, eclass
-	syntax [anything] [if]  [in] [aweight pweight fweight iweight]  [, DELta(real 1) LIMit(real 0.00001) MAXimum(real 1000) Robust CLuster(varlist numeric)  ]
-	marksample touse
+//syntax anything(fv ts numeric) [if] [in] [aweight pweight fweight iweight]  [, DELta(real 1) LIMit(real 0.00001) MAXimum(real 1000) Robust CLuster(string)  ]
+
+syntax varlist [if] [in] [aweight pweight fweight iweight] [, DELta(real 1) LIMit(real 0.00001) ENDog(string) INSTR(string) MAXimum(real 1000) Robust CLuster(string)]           
+
+marksample touse   
+markout `touse'  `cluster', s  
 	preserve 
-	quietly keep if `touse'
+quietly keep if `touse'
+	
 	if "`gmm2s'" !="" {
 		local opt0 = "`gmm2s' "
 	}
@@ -20,34 +27,63 @@ program define i2SLS_ivreg2, eclass
 	}
 	local option = "`opt0'`opt1'`opt2'"
 	*** Obtain lists of variables 
-	local list_var `anything'
+	local list_var `varlist'
 	gettoken depvar list_var : list_var
-	if (strpos("`list_var'","(")==2){  // anormal case : no X, only Z 
-	local list_var: subinstr local list_var "(" "", all
-	local indepvar 
-	gettoken endog list_var : list_var, bind
-	gettoken endog instr_temp : endog , p("=")
-	local list_var: subinstr local list_var "=" "", all
-	gettoken instr list_var : list_var, bind
-	}
-	else{  // normal case : X exists 
-	gettoken indepvar list_var : list_var, p("(")
-	gettoken endog list_var : list_var, bind
-	gettoken endog endog : endog, p("(")
-	gettoken endog instr_temp : endog , p("=")
-	gettoken equalsign instr_temp : instr_temp , p("=")
-	gettoken instr instr_temp : instr_temp, p(")")
-	}
-			
-	*** Initialisation de la boucle
-	tempvar y_tild 
-	quietly gen `y_tild' = log(`depvar' + 1)
+	gettoken _rhs list_var : list_var, p("(")
+*** check seperation : code from "ppml"
+ tempvar logy                            																						// Creates regressand for first step
+   qui gen `logy'=.  if (`touse')                                                                                // Creates regressand for first step
+ quietly: replace `logy'=log(`depvar') if (`touse')&(`depvar'>0)
+ reg `logy' `_rhs' `endog' if (`touse')&(`depvar'>0)	
+ 
+ tempvar zeros                            																						// Creates regressand for first step
+ quietly: gen `zeros'=1                                                                                                 // Initialize observations selector
+ local _drop ""                                                                                                // List of regressors to exclude
+ local indepvar ""     
+    foreach x of varlist `_rhs' `endog' {  
+      if (_se[`x']==0) {                                                                                       // Try to include regressors dropped
+          qui summarize `x' if (`depvar'>0)&(`touse'), meanonly
+          local _mean=r(mean)
+          qui summarize `x' if (`depvar'==0)&(`touse')
+          if (r(min)<`_mean')&(r(max)>`_mean'){                                            // Include regressor if conditions met and
+		  if (`x'!=`endog'){
+              local indepvar "`indepvar' `x'"     
+		  } 
+          }
+          else{
+              qui su `x' if `touse', d                                                                         // Otherwise, drop regressor
+              local _mad=r(p50)
+              qui inspect  `x'  if `touse'                                                                         
+              qui replace `zeros'=0 if (`x'!=`_mad')&(r(N_unique)==2)&(`touse')                     // Mark observations to drop
+              local _drop "`_drop' `x'"
+          }
+      }
+      if (_se[`x']>0)&(`x'!=`endog') {                                                                  // Include safe regressors: LOOP 1.2
+      local indepvar "`indepvar' `x'" 
+      }
+// End LOOP 1.2
+    }   
+ qui su `touse' if `touse', mean                                                                               // Summarize touse to obtain N
+ local _enne=r(sum)                                                                                            // Save N
+ qui replace `touse'=0 if (`zeros'==0)&("`keep'"=="")&(`depvar'==0)&(`touse')                                  // Drop observations with perfect fit
+ di                                                                                                              // if keep is off
+ local k_excluded : word count `_drop'                                                                         // Number of variables causing perfect fit
+ di in green "Number of regressors excluded to ensure that the estimates exist: `k_excluded'" 
+ if ("`_drop'" != "") di "Excluded regressors: `_drop'"                                                        // List dropped variables if any
+ qui su `touse' if `touse', mean
+ local _enne = `_enne' - r(sum)                                                                                // Number of observations dropped
+ di in green "Number of observations excluded: `_enne'" 
+ local _enne =  r(sum)
+quietly keep if `touse'	
+** drop collinear variables
 	tempvar cste
 	gen `cste' = 1
-	** drop collinear variables
     _rmcoll `indepvar' `cste', forcedrop 
 	local var_list `endog' `r(varlist)' `cste'  
 	local instr_list `instr' `r(varlist)' `cste' 
+	*** Initialisation de la boucle
+	tempvar y_tild 
+	quietly gen `y_tild' = log(`depvar' + 1)
 	** prepare 2SLS
 	*local var_list  `endog' `indepvar' `cste'
 	*local instr_list `instr' `indepvar' `cste'
@@ -123,14 +159,17 @@ mata: beta_initial = beta_new
 	* Calcul du "bon" rÃ©sidu
 	mata: xb_hat = X*beta_new
 	mata : y_tilde = log(y + `delta'*exp(xb_hat)) :-mean(log(y + `delta'*exp(xb_hat)) - xb_hat)
-	* 	gen `ui' = exp(`y_tild' + `c_hat' - `xb_hat') - `delta'
-	mata: ui = y:*exp(-xb_hat)
-	mata: ui = ui:/(`delta' :+ ui)
 	* Retour en Stata 
 	cap drop y_tild 
 	quietly mata: st_addvar("double", "y_tild")
 	mata: st_store(.,"y_tild",y_tilde)
-	quietly ivreg2 y_tild `r(varlist)' (`endog' = `instr') [`weight'`exp'] if `touse', `option'  
+	quietly ivreg2 y_tild `r(varlist)' (`endog' = `instr') [`weight'`exp'] if `touse', `option' 
+	cap drop xb_hat
+	quietly predict xb_hat, xb
+	cap drop ui
+	quietly gen ui = `depvar'*exp(-xb_hat)
+	quietly replace ui = ui/(`delta' + ui)
+	mata : ui= st_data(.,"ui")
 	* Calcul de Sigma_0, de I-W, et de Sigma_tild
 	matrix beta_final = e(b) // 	mata: st_matrix("beta_final", beta_new)
 	matrix Sigma = e(V)
@@ -138,6 +177,7 @@ mata: beta_initial = beta_new
 	mata : Sigma_0 = (cross(X,Z)*invsym(cross(Z,Z))*cross(Z,X):/rows(X))*Sigma_hat*(cross(X,Z)*invsym(cross(Z,Z))*cross(Z,X):/rows(X)) // recover original HAC 
 	mata : invXpPzIWX = invsym(0.5:/rows(X)*cross(X,Z)*invsym(cross(Z,Z))*cross(Z,ui,X)+ 0.5:/rows(X)*cross(X,ui,Z)*invsym(cross(Z,Z))*cross(Z,X))
 	mata : Sigma_tild = invXpPzIWX*Sigma_0*invXpPzIWX
+	mata : Sigma_tild = (Sigma_tild+Sigma_tild'):/2 
     	mata: st_matrix("Sigma_tild", Sigma_tild) // used in practice
 	*** Stocker les resultats dans une matrice
 	local names : colnames e(b)
