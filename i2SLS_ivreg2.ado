@@ -34,8 +34,7 @@ quietly keep if `touse'
  tempvar logy                            																						// Creates regressand for first step
    qui gen `logy'=.  if (`touse')                                                                                // Creates regressand for first step
  quietly: replace `logy'=log(`depvar') if (`touse')&(`depvar'>0)
- reg `logy' `_rhs' `endog' if (`touse')&(`depvar'>0)	
- 
+ quietly: reg `logy' `_rhs' `endog' if (`touse')&(`depvar'>0)	
  tempvar zeros                            																						// Creates regressand for first step
  quietly: gen `zeros'=1                                                                                                 // Initialize observations selector
  local _drop ""                                                                                                // List of regressors to exclude
