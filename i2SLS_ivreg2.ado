@@ -30,6 +30,10 @@ quietly keep if `touse'
 	local list_var `varlist'
 	gettoken depvar list_var : list_var
 	gettoken _rhs list_var : list_var, p("(")
+	
+foreach var of varlist  `_rhs' {
+quietly drop if missing(`var')	
+}
 *** check seperation : code from "ppml"
  tempvar logy                            																						// Creates regressand for first step
    qui gen `logy'=.  if (`touse')                                                                                // Creates regressand for first step
