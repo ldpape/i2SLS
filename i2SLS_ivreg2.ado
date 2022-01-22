@@ -31,7 +31,7 @@ quietly keep if `touse'
 	gettoken depvar list_var : list_var
 	gettoken _rhs list_var : list_var, p("(")
 	
-foreach var of varlist  `_rhs' {
+foreach var of varlist  `_rhs' `endog' `instr'{
 quietly drop if missing(`var')	
 }
 *** check seperation : code from "ppml"
