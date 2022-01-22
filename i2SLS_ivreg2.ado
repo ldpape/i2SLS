@@ -9,7 +9,7 @@ cap program drop i2SLS_ivreg2
 program define i2SLS_ivreg2, eclass
 //syntax anything(fv ts numeric) [if] [in] [aweight pweight fweight iweight]  [, DELta(real 1) LIMit(real 0.00001) MAXimum(real 1000) Robust CLuster(string)  ]
 
-syntax varlist [if] [in] [aweight pweight fweight iweight] [, DELta(real 1) LIMit(real 0.00001) ENDog(string) INSTR(string) MAXimum(real 1000) Robust CLuster(string)]           
+syntax varlist [if] [in] [aweight pweight fweight iweight] [, DELta(real 1) LIMit(real 0.00001) ENDog(varlist) INSTR(varlist) MAXimum(real 1000) Robust CLuster(string)]           
 
 marksample touse   
 markout `touse'  `cluster', s  
