@@ -9,7 +9,7 @@ cap program drop i2SLS_ivreg2
 program define i2SLS_ivreg2, eclass
 //syntax anything(fv ts numeric) [if] [in] [aweight pweight fweight iweight]  [, DELta(real 1) LIMit(real 0.00001) MAXimum(real 1000) Robust CLuster(string)  ]
 
-syntax varlist [if] [in] [aweight pweight fweight iweight] [, DELta(real 1) ENDog(varlist) INSTR(varlist) LIMit(real 1e-8)  MAXimum(real 10000) Robust CLuster(string)]           
+syntax varlist [if] [in] [aweight pweight fweight iweight] [, DELta(real 1) endog(varlist) instr(varlist) LIMit(real 1e-8)  MAXimum(real 10000) Robust CLuster(string)]           
 
 marksample touse   
 markout `touse'  `cluster', s  
@@ -30,7 +30,6 @@ quietly keep if `touse'
 	local list_var `varlist'
 	gettoken depvar list_var : list_var
 	gettoken _rhs list_var : list_var, p("(")
-	
 foreach var of varlist  `_rhs' `endog' `instr'{
 quietly drop if missing(`var')	
 }
@@ -43,17 +42,22 @@ quietly drop if missing(`var')
  quietly: gen `zeros'=1                                                                                                 // Initialize observations selector
  local _drop ""                                                                                                // List of regressors to exclude
  local indepvar ""     
+local count: word count `_rhs'
+ scalar count = `count'
+ scalar nb = 0
     foreach x of varlist `_rhs' `endog' {  
+		scalar nb = nb+1
       if (_se[`x']==0) {                                                                                       // Try to include regressors dropped
-          qui summarize `x' if (`depvar'>0)&(`touse'), meanonly
+		 qui summarize `x' if (`depvar'>0)&(`touse'), meanonly
           local _mean=r(mean)
           qui summarize `x' if (`depvar'==0)&(`touse')
           if (r(min)<`_mean')&(r(max)>`_mean'){                                            // Include regressor if conditions met and
-		  if (`x'!=`endog'){
+		  if (nb<= count){
               local indepvar "`indepvar' `x'"     
 		  } 
           }
           else{
+		  	di "here"
               qui su `x' if `touse', d                                                                         // Otherwise, drop regressor
               local _mad=r(p50)
               qui inspect  `x'  if `touse'                                                                         
@@ -61,7 +65,7 @@ quietly drop if missing(`var')
               local _drop "`_drop' `x'"
           }
       }
-      if (_se[`x']>0)&(`x'!=`endog') {                                                                  // Include safe regressors: LOOP 1.2
+      if (_se[`x']>0)&(nb<=count) {                                                                  // Include safe regressors: LOOP 1.2
       local indepvar "`indepvar' `x'" 
       }
 // End LOOP 1.2
@@ -86,7 +90,7 @@ quietly keep if `touse'
 	local instr_list `instr' `r(varlist)' `cste' 
 	*** Initialisation de la boucle
 	tempvar y_tild 
-	quietly gen `y_tild' = log(`depvar' + 1)
+	quietly gen `y_tild' = log(`depvar' + `delta')
 	** prepare 2SLS
 	*local var_list  `endog' `indepvar' `cste'
 	*local instr_list `instr' `indepvar' `cste'
@@ -99,7 +103,6 @@ quietly keep if `touse'
 	mata : st_view(y_tilde,.,"`y_tild'")
 	mata : st_view(y,.,"`depvar'")
 	mata : invPzX = invsym(cross(X,Z)*invsym(cross(Z,Z))*cross(Z,X))*cross(X,Z)*invsym(cross(Z,Z))
-	mata : beta_initial = invPzX*cross(Z,y_tilde)
 	mata : beta_initial = invPzX*cross(Z,y_tilde)
 	mata : beta_t_1 = beta_initial // needed to initialize
 	mata : beta_t_2 = beta_initial // needed to initialize
@@ -162,23 +165,19 @@ mata: beta_initial = beta_new
 	* Calcul du "bon" rÃ©sidu
 	mata: xb_hat = X*beta_new
 	mata : y_tilde = log(y + `delta'*exp(xb_hat)) :-mean(log(y + `delta'*exp(xb_hat)) - xb_hat)
+	mata : ui = y:*exp(-xb_hat)
+	mata: weight = ui:/(ui :+ `delta')
 	* Retour en Stata 
 	cap drop y_tild 
 	quietly mata: st_addvar("double", "y_tild")
 	mata: st_store(.,"y_tild",y_tilde)
-	quietly ivreg2 y_tild `r(varlist)' (`endog' = `instr') [`weight'`exp'] if `touse', `option' 
-	cap drop xb_hat
-	quietly predict xb_hat, xb
-	cap drop ui
-	quietly gen ui = `depvar'*exp(-xb_hat)
-	quietly replace ui = ui/(`delta' + ui)
-	mata : ui= st_data(.,"ui")
+quietly: ivreg2 y_tild `r(varlist)' (`endog' = `instr') [`weight'`exp'] if `touse', `option' 
 	* Calcul de Sigma_0, de I-W, et de Sigma_tild
 	matrix beta_final = e(b) // 	mata: st_matrix("beta_final", beta_new)
 	matrix Sigma = e(V)
 	mata : Sigma_hat = st_matrix("Sigma")
 	mata : Sigma_0 = (cross(X,Z)*invsym(cross(Z,Z))*cross(Z,X):/rows(X))*Sigma_hat*(cross(X,Z)*invsym(cross(Z,Z))*cross(Z,X):/rows(X)) // recover original HAC 
-	mata : invXpPzIWX = invsym(0.5:/rows(X)*cross(X,Z)*invsym(cross(Z,Z))*cross(Z,ui,X)+ 0.5:/rows(X)*cross(X,ui,Z)*invsym(cross(Z,Z))*cross(Z,X))
+	mata : invXpPzIWX = invsym(0.5:/rows(X)*cross(X,Z)*invsym(cross(Z,Z))*cross(Z,weight,X)+ 0.5:/rows(X)*cross(X,weight,Z)*invsym(cross(Z,Z))*cross(Z,X))
 	mata : Sigma_tild = invXpPzIWX*Sigma_0*invXpPzIWX
 	mata : Sigma_tild = (Sigma_tild+Sigma_tild'):/2 
     	mata: st_matrix("Sigma_tild", Sigma_tild) // used in practice
