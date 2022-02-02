@@ -55,7 +55,6 @@ local count: word count `_rhs'
 		  } 
           }
           else{
-		  	di "here"
               qui su `x' if `touse', d                                                                         // Otherwise, drop regressor
               local _mad=r(p50)
               qui inspect  `x'  if `touse'                                                                         
