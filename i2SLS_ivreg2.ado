@@ -4,7 +4,7 @@
 * 21/12 : Manual iteration of 2SLS GMM + options to control nb iterations /convergence..
 * 04/01 : retour de la constante + check de convergence 
 * 21/01 : symmetric S.E. + correction de syntax + check singleton de PPML
-
+* 02/02 : drop preserve for speed + memory gain, correction for 'touse', and post-estimates
 cap program drop i2SLS_ivreg2
 program define i2SLS_ivreg2, eclass
 //syntax anything(fv ts numeric) [if] [in] [aweight pweight fweight iweight]  [, DELta(real 1) LIMit(real 0.00001) MAXimum(real 1000) Robust CLuster(string)  ]
@@ -13,8 +13,6 @@ syntax varlist [if] [in] [aweight pweight fweight iweight] [, DELta(real 1) endo
 
 marksample touse   
 markout `touse'  `cluster', s  
-	preserve 
-quietly keep if `touse'
 	
 	if "`gmm2s'" !="" {
 		local opt0 = "`gmm2s' "
@@ -30,8 +28,8 @@ quietly keep if `touse'
 	local list_var `varlist'
 	gettoken depvar list_var : list_var
 	gettoken _rhs list_var : list_var, p("(")
-foreach var of varlist  `_rhs' `endog' `instr'{
-quietly drop if missing(`var')	
+foreach var of varlist  `depvar' `_rhs' `endog' `instr'{
+quietly replace `touse' = 0 if missing(`var')	
 }
 *** check seperation : code from "ppml"
  tempvar logy                            																						// Creates regressand for first step
@@ -81,16 +79,16 @@ local count: word count `_rhs'
  local _enne = `_enne' - r(sum)                                                                                // Number of observations dropped
  di in green "Number of observations excluded: `_enne'" 
  local _enne =  r(sum)
-quietly keep if `touse'	
 ** drop collinear variables
 	tempvar cste
 	gen `cste' = 1
-    _rmcoll `indepvar' `cste', forcedrop 
+    _rmcoll `indepvar' `cste' if `touse', forcedrop 
 	local var_list `endog' `r(varlist)' `cste'  
 	local instr_list `instr' `r(varlist)' `cste' 
+	local exogenous `r(varlist)'
 	*** Initialisation de la boucle
 	tempvar y_tild 
-	quietly gen `y_tild' = log(`depvar' + `delta')
+	quietly gen `y_tild' = log(`depvar' + `delta') if `touse'
 	** prepare 2SLS
 	*local var_list  `endog' `indepvar' `cste'
 	*local instr_list `instr' `indepvar' `cste'
@@ -98,10 +96,10 @@ quietly keep if `touse'
 	mata : Z=.
 	mata : y_tilde =.
 	mata : y =.
-	mata : st_view(X,.,"`var_list'")
-	mata : st_view(Z,.,"`instr_list'")
-	mata : st_view(y_tilde,.,"`y_tild'")
-	mata : st_view(y,.,"`depvar'")
+	mata : st_view(X,.,"`var_list'","`touse'")
+	mata : st_view(Z,.,"`instr_list'","`touse'")
+	mata : st_view(y_tilde,.,"`y_tild'","`touse'")
+	mata : st_view(y,.,"`depvar'","`touse'")
 	mata : invPzX = invsym(cross(X,Z)*invsym(cross(Z,Z))*cross(Z,X))*cross(X,Z)*invsym(cross(Z,Z))
 	mata : beta_initial = invPzX*cross(Z,y_tilde)
 	mata : beta_t_1 = beta_initial // needed to initialize
@@ -168,10 +166,9 @@ mata: beta_initial = beta_new
 	mata : ui = y:*exp(-xb_hat)
 	mata: weight = ui:/(ui :+ `delta')
 	* Retour en Stata 
-	cap drop y_tild 
-	quietly mata: st_addvar("double", "y_tild")
-	mata: st_store(.,"y_tild",y_tilde)
-quietly: ivreg2 y_tild `r(varlist)' (`endog' = `instr') [`weight'`exp'] if `touse', `option' 
+	cap drop `y_tild' 
+	mata: st_store(., st_addvar("double", "`y_tild'"), "`touse'", y_tilde)
+quietly: ivreg2 `y_tild' `exogenous' (`endog' = `instr') [`weight'`exp'] if `touse', `option' 
 	* Calcul de Sigma_0, de I-W, et de Sigma_tild
 	matrix beta_final = e(b) // 	mata: st_matrix("beta_final", beta_new)
 	matrix Sigma = e(V)
@@ -182,12 +179,23 @@ quietly: ivreg2 y_tild `r(varlist)' (`endog' = `instr') [`weight'`exp'] if `tous
 	mata : Sigma_tild = (Sigma_tild+Sigma_tild'):/2 
     	mata: st_matrix("Sigma_tild", Sigma_tild) // used in practice
 	*** Stocker les resultats dans une matrice
-	local names : colnames e(b)
+	local names : colnames beta_final
 	local nbvar : word count `names'
 	mat rownames Sigma_tild = `names' 
     mat colnames Sigma_tild = `names' 
+	cap drop _COPY
+	quietly: gen _COPY = `touse'
     ereturn post beta_final Sigma_tild , obs(`e(N)') depname(`depvar') esample(`touse')  dof(`=e(df r)') 
-	restore 
+	 cap drop i2SLS_xb_hat
+	cap drop i2SLS_error
+	*quietly mata: st_addvar("double", "iOLS_xb_hat")
+	*mata: st_store(.,"iOLS_xb_hat",xb_hat)
+	*quietly mata: st_addvar("double", "iOLS_error")
+	*mata: st_store(.,"iOLS_error",ui)
+    	mata: st_store(., st_addvar("double", "i2SLS_error"), "_COPY", ui)
+    	mata: st_store(., st_addvar("double", "i2SLS_xb_hat"),"_COPY", xb_hat)
+		cap drop _COPY
+
 ereturn scalar delta = `delta'
 ereturn  scalar eps =   `eps'
 ereturn  scalar niter =  `k'
